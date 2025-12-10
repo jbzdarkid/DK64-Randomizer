@@ -13,7 +13,8 @@ jobs:
       run: |
         git remote add upstream https://github.com/2dos/DK64-Randomizer
         git fetch upstream dev
-        git reset --hard upstream/dev
+        git rebase upstream/dev || exit 1
+        git push --force
 
     - name: Setup python
       uses: actions/setup-python@v6.0.0

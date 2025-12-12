@@ -10,16 +10,14 @@ jobs:
 
     steps:
     - uses: actions/checkout@v5
+      with:
+        fetch-depth: 0
     - name: Update fork
       run: |
         git remote add upstream https://github.com/2dos/DK64-Randomizer
-        git status
         git fetch upstream dev
-        git status
         git rebase upstream/dev || exit 1
-        git status
         git push --force
-        git status
 
     - name: Setup python
       uses: actions/setup-python@v6.0.0

@@ -17,6 +17,8 @@ jobs:
         git remote add upstream https://github.com/2dos/DK64-Randomizer
         git fetch upstream dev
         git rebase upstream/dev || exit 1
+        git config --global user.email "cbcalc@github.io"
+        git config --global user.name "CBCalc Nightly"
         git push --force
 
     - name: Setup python

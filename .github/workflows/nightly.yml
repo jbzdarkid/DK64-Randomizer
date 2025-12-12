@@ -3,11 +3,11 @@ on:
   schedule:
     - cron: '4 20 * * *' # Daily at 20:04 AM UTC
   workflow_dispatch:
-permissions:
-  workflow: write
 
 jobs:
   run:
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
 
     steps:

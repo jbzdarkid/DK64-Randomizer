@@ -31,7 +31,7 @@ jobs:
           architecture: x64
 
     - name: Run CB calculator
-      run: python cb_calc.py
+      run: python -u cb_calc.py
 
     - name: Check for changes
       run: |

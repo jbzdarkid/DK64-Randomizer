@@ -153,6 +153,11 @@ class Logic:
         """I'm pretty sure this QoL is always enabled in rando."""
         return True
 
+    def checkFastCheck(self, check):
+        """Some slow checks are sped up in the randomizer (e.g. toy monster fight).
+        Return false because (sometimes?) faster checks can impact coin logic."""
+        return False
+
     def IsLavaWater(self):
         """Hardmode requirements are all assumed false."""
         return False
@@ -404,7 +409,7 @@ def flatten_graph(region_logic, region_bananas, requirements):
     collectibles = []
     for region in region_bananas:
         for collectible in region_bananas[region]:
-            if collectible.type not in [Collectibles.banana, Collectibles.bunch, Collectibles.balloon]:
+            if collectible.type not in [Collectibles.coin]:
                 continue
             elif collectible.logic(no_requirements):
                 regions[region].cbs[collectible].add(set())
@@ -711,15 +716,8 @@ def to_javascript(cb_requirements, special_requirements):
             locations = collections.defaultdict(list)
             count = 0
             for cb, region in cb_requirements[kong][requirements]:
-                if cb.type == Collectibles.banana:
-                    count += 1 * cb.amount
-                    locations[region.name].append(f"{cb.amount} banana{'s'[:cb.amount ^ 1]}")
-                elif cb.type == Collectibles.bunch:
-                    count += 5 * cb.amount
-                    locations[region.name].append(f"{cb.amount} bunch{'es'[:2 * cb.amount ^ 2]}")
-                elif cb.type == Collectibles.balloon:
-                    count += 10 * cb.amount
-                    locations[region.name].append(f"{cb.amount} balloon{'s'[:cb.amount ^ 1]}")
+                count += 1 * cb.amount
+                locations[region.name].append(f"{cb.amount} coin{'s'[:cb.amount ^ 1]}")
             kong_total += count
 
             # Sort the output (for consistency).
@@ -735,7 +733,7 @@ def to_javascript(cb_requirements, special_requirements):
             entries.append((converted, count, locations))
 
         # One final sanity check: There should be 100 CBs per kong.
-        assert kong_total == 100, f"Missing {100 - kong_total} CBs for {kong}"
+        # assert kong_total == 100, f"Missing {100 - kong_total} CBs for {kong}"
 
         def sort_key(entry):
             overall_sort_key = []
@@ -783,7 +781,7 @@ LEVELS = [
         "special_requirements": {
             Events.JapesFreeKongOpenGates: "JapesCoconut",
             "japes_shellhive_gate": "JapesShellhive",
-            Locations.JapesDiddyMountain: "JapesW5Bonus",  # Not actually required for any CBs, but used by interim logic
+            Locations.JapesDiddyMountain: "JapesW5Bonus",  # Not actually required for any CBs, but used by interim logic..
         },
     },
     {
@@ -882,5 +880,5 @@ if __name__ == "__main__":
         output += to_javascript(cb_requirements, level["special_requirements"])
         output += "    },\n"
     output += "}\n"
-    with open("requirement_data.js", "w") as f:
+    with open("requirement_data_coin.js", "w") as f:
         f.write(output)

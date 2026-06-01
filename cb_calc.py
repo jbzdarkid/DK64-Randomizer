@@ -1,4 +1,4 @@
-"""A script to automatically calculate the requirements for various CBs."""
+"""A script to automatically calculate the requirements for various GBs."""
 
 # Python built-ins
 import collections
@@ -26,10 +26,12 @@ from randomizer.Enums.Events import Events
 from randomizer.Enums.Kongs import Kongs
 from randomizer.Enums.Locations import Locations
 from randomizer.Enums.Regions import Regions
-from randomizer.Enums.Settings import RemovedBarriersSelected
+from randomizer.Enums.Settings import FasterChecksSelected, MinigameBarrels, RemovedBarriersSelected
 from randomizer.Enums.Switches import Switches
 from randomizer.Enums.Time import Time
 
+from randomizer.Lists.EnemyTypes import EnemyLoc
+from randomizer.Lists.Location import LocationListOriginal
 
 class MockSettings:
     """Mock of the Settings object."""
@@ -39,7 +41,16 @@ class MockSettings:
     galleon_water_internal = None
     fungi_time_internal = None
     shuffle_shops = False
-
+    crown_placement_rando = False
+    kasplat_rando = False
+    diddy_freeing_kong = Kongs.donkey # ???
+    bonus_barrels = MinigameBarrels.normal
+    mermaid_gb_pearls = 0
+    
+class MockSpoiler:
+    RegionList = {}
+    EmptyEnemyLoc = EnemyLoc(None, None, None, [], None)
+    enemy_location_list = collections.defaultdict(lambda: MockSpoiler.EmptyEnemyLoc)
 
 SWITCHSANITY_MOVES = {
     # These first two switches are removed because they are special_requirements
@@ -84,6 +95,7 @@ class Logic:
         self.settings = MockSettings()
         self.Events = [req for req in self.reqs if isinstance(req, Events)]
         self.SpecialLocationsReached = [req for req in self.reqs if isinstance(req, Locations)]
+        self.spoiler = MockSpoiler()
 
     def get(self, key):
         """Check if a given key is in the requirements."""
@@ -133,8 +145,14 @@ class Logic:
         """I don't think this matters but I think tiny canonically frees lanky."""
         return lambda: self.saxophone
 
+    def CanGetOnCannonGamePlatform(self):
+        return Events.WaterRaised in self.Events
+
     def IsBossReachable(self, level):
-        """Not strictly necessary (there aren't CBs inside boss rooms) but allows for assumed tagging inside boss rooms."""
+        """Not strictly necessary (there aren't GBs inside boss rooms) but allows for assumed tagging inside boss rooms."""
+        return True
+        
+    def IsBossBeatable(self, level):
         return True
 
     def HasGun(self, kong):
@@ -145,9 +163,27 @@ class Logic:
         """Not needed, this is only used for free trade guns."""
         return False
 
+    def HasKong(self, kong):
+        """All kongs are assumed because I say so."""
+        return True
+
+    def HasEnoughRaceCoins(self, *args):
+        return True
+
     def CanFreeChunky(self):
-        """Small wrapper for an even which is used in a few places."""
+        """Small wrapper for an event which is used in a few places."""
         return Events.ChunkyFreed in self.Events
+
+    def CanFreeTiny(self):
+        """Small wrapper for an event which is used in a few places."""
+        return Switches.AztecOKONGPuzzle in self.Events
+        
+    def CanFreeLanky(self):
+        return self.swim and Switches.AztecLlamaPuzzle in self.Events
+
+    def CanFreeDiddy(self):
+        """Small wrapper for an event which is used in a few places."""
+        return Switches.JapesDiddyCave in self.Events
 
     def isKrushaAdjacent(self, kong):
         """Check if a given kong is krusha adjacent."""
@@ -156,6 +192,14 @@ class Logic:
     def galleonGatesStayOpen(self):
         """I'm pretty sure this QoL is always enabled in rando."""
         return True
+        
+    def checkFastCheck(self, check):
+        if check == FasterChecksSelected.factory_arcade_round_1:
+            return False # Not enabled in most presets.
+        raise ValueError("Fast check unknown state: " + check.name)
+        
+    def GetCoins(self, kong):
+        return True # Used by arcade.
 
     def IsLavaWater(self):
         """Hardmode requirements are all assumed false."""
@@ -204,7 +248,7 @@ class Logic:
 class SetOfSets:
     """Wrapper class to handle composite requirements.
 
-    In practice, it can be possible to collect CBs using multiple options (an "either/or").
+    In practice, it can be possible to collect GBs using multiple options (an "either/or").
     To represent this comfortably, we use a "set of sets", where each inner set represents
     a unique way of accomplishing a task, and the overall set represents all ways of doing the task.
     There should not be duplicates nor overlap; this class helps to keep that invariant true.
@@ -242,6 +286,13 @@ class SetOfSets:
             if requirement not in other.requirements:
                 return False
         return True
+        
+    def __contains__(self, value):
+        """Check if a value is anywhere in this SetOfSets."""
+        for requirement in self.requirements:
+            if value in requirement:
+                return True
+        return False
 
     def add(self, requirement):
         """Add a requirement to this SetOfSets, if it's distinctive."""
@@ -293,7 +344,7 @@ class MockRegion:
     def __init__(self, region_id):
         """Initialize the MockRegion with a region ID."""
         self.events = collections.defaultdict(SetOfSets)
-        self.cbs = collections.defaultdict(SetOfSets)
+        self.gbs = collections.defaultdict(SetOfSets)
         self.exits = collections.defaultdict(SetOfSets)
         self.warps = {}
         self.taggable = False
@@ -404,23 +455,25 @@ def flatten_graph(region_logic, region_bananas, requirements):
     for event in unhandled_events:
         raise ValueError(f"Unable to determine requirements for event {event.name}")
 
-    print("Finding all collectibles")
-    collectibles = []
-    for region in region_bananas:
-        for collectible in region_bananas[region]:
-            if collectible.type not in [Collectibles.banana, Collectibles.bunch, Collectibles.balloon]:
+    print("Finding all locations")
+    locations = []
+    for region in region_logic:
+        for location in region_logic[region].locations:
+            if location.id.name.endswith('Medal'):
                 continue
-            elif collectible.logic(no_requirements):
-                regions[region].cbs[collectible].add(set())
+            elif location.id.name.startswith('KremKap_'):
+                continue
+            elif location.logic(no_requirements):
+                regions[region].gbs[location].add(set())
             else:
-                collectibles.append((region, collectible))
+                locations.append((region, location))
 
-    print("Computing collectible requirements")
+    print("Computing location requirements")
     for requirement in possible_requirements(requirements):
         l = Logic(requirement)
-        for region, collectible in collectibles:
-            if collectible.logic(l):
-                regions[region].cbs[collectible].add(requirement)
+        for region, location in locations:
+            if location.logic(l):
+                regions[region].gbs[location].add(requirement)
 
     print("Finding all region transitions")
     transitions = []
@@ -599,38 +652,34 @@ def traverse_graph(regions, entry_region):
                 # print(f"Replaced event {event.name} in region {region.name} with its requirements {event_requirements[event]}")
                 pass
 
-            for cb_requirements in regions[region].cbs.values():
-                if cb_requirements.replace_event(event, event_requirements[event]):
+            for gb_requirements in regions[region].gbs.values():
+                if gb_requirements.replace_event(event, event_requirements[event]):
                     # print(f"Replaced event {event.name} in region {region.name} with its requirements {event_requirements[event]}")
                     pass
 
     return region_requirements
 
 
-def compute_cb_requirements(regions, region_requirements):
-    """Stage 3: Compute the requirements to reach each CB/Bunch/Balloon.
+def compute_gb_requirements(regions, region_requirements):
+    """Stage 3: Compute the requirements to reach each GB.
 
     We already parsed out the relevant collectible objects during our flatten_graph prepass.
     Now, it's time to actually make the magic happen, and use our knowledge of region and
-    event requirements to figure out how to get all the colored bananas.
+    event requirements to figure out how to get all the golden bananas.
 
     Since we've done a pretty thorough job already, this turns out to be pretty simple:
-    Just determine the cross-product between the direct requirements to acquire a CB
-    (e.g. 'coconut' for a balloon), and the transitive requirements to access a region
-    (e.g. 'climbing' to get up to the japes hillside).
+    Just determine the cross-product between the direct requirements to acquire a GB
+    and the transitive requirements to access a region.
     """
-    print("Computing CB requirements")
-    all_cb_requirements = collections.defaultdict(lambda: collections.defaultdict(list))
+    print("Computing GB requirements")
+    all_gb_requirements = collections.defaultdict(list)
     for region in region_requirements:
-        # For each CB in the region, combine all the ways of obtaining the CB(s) with all the ways of reaching the region.
-        for cb, cb_requirements in regions[region].cbs.items():
+        # For each GB in the region, combine all the ways of obtaining the GB with all the ways of reaching the region.
+        for gb, gb_requirements in regions[region].gbs.items():
             requirements_crossproduct = SetOfSets()
-            for cb_requirement in cb_requirements:
+            for gb_requirement in gb_requirements:
                 for region_requirement in region_requirements[region]:
-                    requirement = region_requirement | cb_requirement
-                    if not all_kongs_can_use(requirement) and "is" + cb.kong.name.lower() not in requirement:
-                        # print(f"Region requirement {region_requirement} for region {region.name} does not include kong {cb.kong.name}, skipping {cb.amount} {cb.type.name}")
-                        continue
+                    requirement = region_requirement | gb_requirement
 
                     # Special case #1: We require "night" and "day" separately from guns, but they are overlapping.
                     # If the requirement contains night or day access *and* one of the 5 guns, remove night/day.
@@ -641,10 +690,6 @@ def compute_cb_requirements(regions, region_requirements):
                     # If the requirement contains both, just report levelSlam (the more restrictive requirement)
                     if requirement.intersection({"levelSlam"}):
                         requirement.discard("Slam")
-                    # Special case #3: We assume Enguarde is available if lanky is available.
-                    if cb.kong == Kongs.lanky:
-                        requirement.discard(Events.ShipyardEnguarde)
-                        requirement.discard(Events.LighthouseEnguarde)
                     # Special case #4: We assume kongs are implied if any kong-specific moves are required.
                     if requirement.intersection({"coconut", "bongos", "grab", "strongKong", "blast"}):
                         requirement.discard("isdonkey")
@@ -661,37 +706,35 @@ def compute_cb_requirements(regions, region_requirements):
                     if requirement.intersection({"pineapple", "triangle", "punch", "hunkyChunky", "gorillaGone"}):
                         requirement.discard("ischunky")
                         requirement.discard("chunky")
-                    # Special case #5: We assume kongs are implied for their own CBs
-                    requirement.discard("is" + cb.kong.name.lower())
-                    requirement.discard(cb.kong.name.lower())
 
                     # Finally, once we're done processing all the hacks, add the requirements.
                     requirements_crossproduct.add(requirement)
 
             if len(requirements_crossproduct) == 0:
-                raise ValueError(f"Unable to determine requirements for {cb.amount} {cb.kong.name} {cb.type.name} in region {region.name} with original requirements {cb_requirements}")
+                raise ValueError(f"Unable to determine requirements for {gb} in region {region.name} with original requirements {gb_requirements}")
+                
+            if 'climbing' in requirements_crossproduct:
+                all_gb_requirements[requirements_crossproduct].append((gb, region))
 
-            all_cb_requirements[cb.kong][requirements_crossproduct].append((cb, region))
-
-    return all_cb_requirements
+    return all_gb_requirements
 
 
-def to_javascript(cb_requirements, special_requirements):
-    """Stage 4: Generate the output for Ballaam's CB calculator.
+def to_javascript(gb_requirements, special_requirements):
+    """Stage 4: Generate the output for Ballaam's GB calculator.
 
     Finally, we need to emit this data in some format that Javascript can understand.
     Thankfully, that's not too bad -- there's just a bit of renaming and other small fixups.
-    We've already grouped CBs by their requirements in the previous step, but this stage is also
-    responsible for counting the total number of CBs for each SetOfSets requirement.
+    We've already grouped GBs by their requirements in the previous step, but this stage is also
+    responsible for counting the total number of GBs for each SetOfSets requirement.
 
-    For debugability, I'm also including a comment which describes which CBs are available
+    For debugability, I'm also including a comment which describes which GBs are available
     for each set of requirements. It's not perfect but it should be good enough for reading.
     """
     # The javascript code uses slightly different names for kongs and moves.
     kong_map = {Kongs.donkey: "DK", Kongs.diddy: "Diddy", Kongs.lanky: "Lanky", Kongs.tiny: "Tiny", Kongs.chunky: "Chunky"}
     move_map = {
         **{"can_use_vines": "Vines", "swim": "Diving", "oranges": "Oranges", "barrels": "Barrels", "climbing": "ClimbingCheck"},
-        **{"Slam": "Slam", "levelSlam": "LevelSlam"},
+        **{"Slam": "Slam", "levelSlam": "LevelSlam", "camera": "Camera", "homing": "Homing"},
         # Kong-specific
         **{"coconut": "Coconut", "bongos": "Bongos", "grab": "Grab", "strongKong": "Strong", "blast": "Blast"},
         **{"peanut": "Peanut", "guitar": "Guitar", "charge": "Charge", "jetpack": "Rocket", "spring": "Spring"},
@@ -705,56 +748,43 @@ def to_javascript(cb_requirements, special_requirements):
     move_map.update(special_requirements)
     move_map_keys = list(move_map.keys())
     move_map_values = list(move_map.values())
+    
+    location_names = {k: v.name for k, v in LocationListOriginal.items()}
 
     output = ""
-    for kong in kong_map:
-        output += f'        "{kong_map[kong]}": [\n'
-        entries = []
-        kong_total = 0
-        for requirements in cb_requirements[kong]:
-            locations = collections.defaultdict(list)
-            count = 0
-            for cb, region in cb_requirements[kong][requirements]:
-                if cb.type == Collectibles.banana:
-                    count += 1 * cb.amount
-                    locations[region.name].append(f"{cb.amount} banana{'s'[:cb.amount ^ 1]}")
-                elif cb.type == Collectibles.bunch:
-                    count += 5 * cb.amount
-                    locations[region.name].append(f"{cb.amount} bunch{'es'[:2 * cb.amount ^ 2]}")
-                elif cb.type == Collectibles.balloon:
-                    count += 10 * cb.amount
-                    locations[region.name].append(f"{cb.amount} balloon{'s'[:cb.amount ^ 1]}")
-            kong_total += count
+    output += f'        "All Kongs": [\n'
+    entries = []
+    for requirements in gb_requirements:
+        locations = [location_names[l[0].id] for l in gb_requirements[requirements]]
+        locations.sort()
 
-            # Sort the output (for consistency).
-            # 1. Each requirement is ordered by the moves in the move map
-            # 2. Either/or requirements are ordered by length, then by moves in the move map
-            # 3. CBs with fewer requirements come first, ties broken by moves in the move map
-            converted = []
-            for requirement in requirements:
-                converted_requirement = [move_map_keys.index(r) for r in requirement]
-                converted_requirement.sort()
-                converted.append(converted_requirement)
-            converted.sort(key=lambda row: (len(row), *row))
-            entries.append((converted, count, locations))
+        # Sort the output (for consistency).
+        # 1. Each requirement is ordered by the moves in the move map
+        # 2. Either/or requirements are ordered by length, then by moves in the move map
+        # 3. GBs with fewer requirements come first, ties broken by moves in the move map
+        converted = []
+        for requirement in requirements:
+            converted_requirement = []
+            for r in requirement:
+                if r not in move_map_keys:
+                    raise ValueError(f"Could not convert internal move '{r}' into a javascript value")
+                converted_requirement.append(move_map_keys.index(r))
+            converted_requirement.sort()
+            converted.append(converted_requirement)
+        converted.sort(key=lambda row: (len(row), *row))
+        entries.append((converted, locations))
 
-        # One final sanity check: There should be 100 CBs per kong.
-        assert kong_total == 100, f"Missing {100 - kong_total} CBs for {kong}"
+    def sort_key(entry):
+        overall_sort_key = []
+        for converted_requirement in entry[0]:
+            overall_sort_key += converted_requirement
+        return (len(overall_sort_key), *overall_sort_key)
 
-        def sort_key(entry):
-            overall_sort_key = []
-            for converted_requirement in entry[0]:
-                overall_sort_key += converted_requirement
-            return (len(overall_sort_key), *overall_sort_key)
+    entries.sort(key=sort_key)
 
-        entries.sort(key=sort_key)
-
-        for converted_requirements, count, locations in entries:
-            output += f"            new Requirement({count}, "
-
-            location_string = []
-            for region in sorted(locations.keys()):
-                location_string.append(", ".join(sorted(locations[region])) + f" in {region}")
+    for converted_requirements, locations in entries:
+        for location in locations:
+            output += f"            new Location('{location}', "
 
             moves = []
             for converted_requirement in converted_requirements:
@@ -762,19 +792,17 @@ def to_javascript(cb_requirements, special_requirements):
                     moves.append("Moves.Moveless")
                 else:
                     move_names = ", ".join(("Moves." + move_map_values[c] for c in converted_requirement))
-                    # Hack: this requirement has a different name depending on which kong is responsible.
-                    move_names = move_names.replace("Moves.CastleCryptDoors", f"Moves.Crypt{kong_map[kong]}Entry")
                     moves.append(move_names)
 
             # Some slight formatting here to put the comment on the first line, regardless of the number of moves.
             if len(moves) == 1:
-                output += f"[[{moves[0]}]]), // " + "; ".join(location_string) + "\n"
+                output += f"[[{moves[0]}]]),\n"
             else:
-                output += "[ // " + "; ".join(location_string) + "\n"
+                output += "[\n"
                 for move in moves:
                     output += f"                [{move}]" + ",\n"
                 output += "            ]),\n"
-        output += "        ],\n"
+    output += "        ],\n"
     return output
 
 
@@ -787,14 +815,14 @@ LEVELS = [
         "special_requirements": {
             Events.JapesFreeKongOpenGates: "JapesCoconut",
             "japes_shellhive_gate": "JapesShellhive",
-            Locations.JapesDiddyMountain: "JapesW5Bonus",  # Not actually required for any CBs, but used by interim logic
+            Locations.JapesDiddyMountain: "JapesW5Bonus",  # Not actually required for any GBs, but used by interim logic
         },
     },
     {
         "name": "Aztec",
         "logic": AztecLogic,
         "bananas": AztecBananas,
-        # I have moved the Angry Aztec entry region to avoid having all CBs locked by Twirl/Vines.
+        # I have moved the Angry Aztec entry region to avoid having all GBs locked by Twirl/Vines.
         "entry_region": Regions.AngryAztecOasis,
         "special_requirements": {
             Events.AztecGuitarPad: "AztecTunnelDoor",
@@ -822,12 +850,12 @@ LEVELS = [
         "special_requirements": {
             Events.WaterRaised: "RaisedWater",
             Events.WaterLowered: "LoweredWater",
-            Events.LighthouseGateOpened: "GalleonLighthouse",
-            Events.ShipyardGateOpened: "GalleonPeanut",
-            Events.ActivatedLighthouse: "GalleonShipSpawned",
-            Events.ShipyardTreasureRoomOpened: "GalleonTreasure",
-            Events.ShipyardEnguarde: "Enguarde",
-            Events.LighthouseEnguarde: "Enguarde",
+            # Events.LighthouseGateOpened: "GalleonLighthouse",
+            # Events.ShipyardGateOpened: "GalleonPeanut",
+            # Events.ActivatedLighthouse: "GalleonShipSpawned",
+            # Events.ShipyardTreasureRoomOpened: "GalleonTreasure",
+            # Events.ShipyardEnguarde: "Enguarde",
+            # Events.LighthouseEnguarde: "Enguarde",
             Locations.GalleonDiddyGoldTower: "DiddyGoldTower",
         },
     },
@@ -869,7 +897,7 @@ LEVELS = [
 
 if __name__ == "__main__":
     output = "const requirement_data = {\n"
-    for level in LEVELS:
+    for level in LEVELS[4:5]:
         requirements = [*BASE_REQUIREMENTS, *level["special_requirements"].keys()]
 
         print("\tEvaluating level", level["name"])
@@ -878,12 +906,12 @@ if __name__ == "__main__":
 
         region_requirements = traverse_graph(regions, level["entry_region"])
 
-        cb_requirements = compute_cb_requirements(regions, region_requirements)
+        gb_requirements = compute_gb_requirements(regions, region_requirements)
 
         print("\tFinished level", level["name"])
 
         output += f'    "{level["name"]}": {{\n'
-        output += to_javascript(cb_requirements, level["special_requirements"])
+        output += to_javascript(gb_requirements, level["special_requirements"])
         output += "    },\n"
     output += "}\n"
     with open("requirement_data.js", "w") as f:

@@ -75,15 +75,27 @@ BASE_REQUIREMENTS = [
 ]
 
 
+# All members of the Events / Locations enums, used to cheaply split a requirement
+# set into its event and location components via set intersection (instead of
+# running isinstance() over every element of every Logic object).
+_EVENT_POOL = frozenset(Events)
+_LOCATION_POOL = frozenset(Locations)
+# The settings object is immutable for our purposes, so a single shared instance
+# avoids millions of redundant allocations during the brute-force passes.
+_SHARED_SETTINGS = MockSettings()
+
+
 class Logic:
     """Mock of the randomizer/Logic.py file."""
 
     def __init__(self, requirements):
         """Initialize the logic class with custom requirements."""
-        self.reqs = set(requirements)
-        self.settings = MockSettings()
-        self.Events = [req for req in self.reqs if isinstance(req, Events)]
-        self.SpecialLocationsReached = [req for req in self.reqs if isinstance(req, Locations)]
+        # possible_requirements already yields fresh sets, so we can adopt them
+        # directly and skip a redundant copy. Other callers may pass any iterable.
+        self.reqs = requirements if type(requirements) is set else set(requirements)
+        self.settings = _SHARED_SETTINGS
+        self.Events = self.reqs & _EVENT_POOL
+        self.SpecialLocationsReached = self.reqs & _LOCATION_POOL
 
     def get(self, key):
         """Check if a given key is in the requirements."""
@@ -313,6 +325,39 @@ class MockRegion:
         return output
 
 
+def _harvest_referenced_names(region_logic, region_bananas):
+    """Collect every attribute/name a level's logic could possibly read.
+
+    Each logic lambda references moves, events and locations by attribute name
+    (e.g. ``Events.WaterRaised`` compiles to the name ``WaterRaised`` in the code
+    object). Helper methods on the Logic mock may also read events indirectly, so
+    we additionally harvest every name referenced anywhere in Logic. The result is
+    a sound over-approximation of the names any item can depend on: anything not in
+    this set cannot change any logic result.
+    """
+    referenced = set()
+
+    def harvest(code):
+        referenced.update(code.co_names)
+        for const in code.co_consts:
+            if hasattr(const, "co_names"):  # Nested code objects (comprehensions, inner lambdas)
+                harvest(const)
+
+    for region in region_logic.values():
+        for event in region.events:
+            harvest(event.logic.__code__)
+        for transition in region.exits:
+            harvest(transition.logic.__code__)
+    for region in region_bananas.values():
+        for collectible in region:
+            harvest(collectible.logic.__code__)
+    for member in vars(Logic).values():
+        if hasattr(member, "__code__"):
+            harvest(member.__code__)
+
+    return referenced
+
+
 def possible_requirements(requirements):
     """Iterate all possible combinations of requirements, in order. Max 5."""
     for i in range(5):
@@ -386,10 +431,17 @@ def flatten_graph(region_logic, region_bananas, requirements):
                 event_names.add(event.name)
 
     # For the purposes of further graph flattening, allow events as requirements, but don't modify the original list.
-    requirements = {*requirements, *event_names}
+    # Events that no logic ever reads (e.g. warp-tag and "level entered" events,
+    # which are computed outputs rather than inputs) cannot change any result, so
+    # we keep them out of the brute-force universe. Since the number of combinations
+    # grows ~n**4, dropping these unreferenced events is a large, output-preserving
+    # speedup. Their own requirements are still computed via the `events` list below.
+    referenced_names = _harvest_referenced_names(region_logic, region_bananas)
+    relevant_events = {name for name in event_names if name.name in referenced_names}
+    requirements = {*requirements, *relevant_events}
 
     print("Computing event requirements")
-    for requirement in possible_requirements({*requirements, *event_names}):  # Events may be requirements for other events
+    for requirement in possible_requirements(requirements):
         l = Logic(requirement)
         for region_id, event in events:
             if event.logic(l):

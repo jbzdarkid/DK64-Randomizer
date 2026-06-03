@@ -194,6 +194,12 @@
                                 Start with Climbing
                             </label>
                         </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input barrier-switch" type="checkbox" role="switch" id="switchAllWarps">
+                            <label class="form-check-label" for="switchAllWarps">
+                                All Warps Activated
+                            </label>
+                        </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
@@ -392,6 +398,8 @@
                 static CryptChunkyEntry = new Moves("Castle Crypt Doors", true, [Moves.Pineapple], true);
                 // Climbing
                 static ClimbingCheck = new Moves("Climbing", true, [Moves.Climbing], true);
+                // Enable all warps
+                static AllWarps = new Moves("Preactivate All Warps");
                 
 
                 constructor (name, requires_moves=true, barrier_moves=[], is_barrier=false) {
@@ -542,7 +550,17 @@
                     "switchAztecIce",
                     "switchClimbing",
                 ], 50, "High", "Night");
-
+                static S5BarrierSkip = new Preset("Barrier Skip", "s5bsv1", [
+                    "switchAztecTunnel",
+                    "switchAztec5DT",
+                    "switchAztecLlama",
+                    "switchFactoryTesting",
+                    "switchGalleonLighthouse",
+                    "switchGalleonShipyard",
+                    "switchForestYellow",
+                    "switchClimbing",
+                    "switchAllWarps",
+                ], 50, "High", "Day");
                 constructor (name, key, barriers, cb_requirement, galleon_water, fungi_time) {
                     this.name = name;
                     this.key = key;
@@ -559,6 +577,7 @@
                 //Preset.Season3Candidates,
                 //Preset.Season3CLO,
                 Preset.Season4,
+                Preset.S5BarrierSkip,
                 Preset.Beginner,
                 Preset.BLZR,
                 Preset.Vanilla,
@@ -841,6 +860,7 @@
                     "switchCavesWalls": [Moves.CavesIceWalls],
                     "switchCryptDoors": [Moves.CryptDKEntry, Moves.CryptDiddyEntry, Moves.CryptLankyEntry, Moves.CryptTinyEntry, Moves.CryptChunkyEntry],
                     "switchClimbing": [Moves.ClimbingCheck],
+                    "switchAllWarps": [Moves.AllWarps],
                 };
                 opened_barriers = []
                 Object.keys(barrier_data).forEach(id => {
@@ -1002,7 +1022,12 @@
                             let purged_moves = [];
                             let extended_moves = [];
                             group.forEach(move_set => {
-                                if (move_set.is_barrier) {
+                                if (move_set == Moves.AllWarps) {
+                                    // If all warps are preacitvated, purge the AllWarps move so that this move_set is free.
+                                    if (opened_barriers.includes(Moves.AllWarps)) {
+                                        purged_moves.push(move_set);
+                                    }
+                                } else if (move_set.is_barrier) {
                                     replacement_moves = getBarrierRequirement(move_set);
                                     if (replacement_moves != null) {
                                         purged_moves.push(move_set);
@@ -1043,7 +1068,9 @@
                 list.forEach(item => {
                     item.requirements.forEach(group => {
                         group.forEach(move_set => {
-                            if (move_set.requires_moves) {
+                            if (move_set == Moves.AllWarps) {
+                                // All Warps is off; this branch is unsatisfiable.
+                            } else if (move_set.requires_moves) {
                                 if (!all_moves.includes(move_set)) {
                                     all_moves.push(move_set);
                                 }

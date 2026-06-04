@@ -897,7 +897,7 @@ LEVELS = [
 
 if __name__ == "__main__":
     output = "const requirement_data = {\n"
-    for level in LEVELS[4:5]:
+    for level in LEVELS:
         requirements = [*BASE_REQUIREMENTS, *level["special_requirements"].keys()]
 
         print("\tEvaluating level", level["name"])

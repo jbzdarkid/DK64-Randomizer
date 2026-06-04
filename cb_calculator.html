@@ -550,7 +550,7 @@
                     "switchAztecIce",
                     "switchClimbing",
                 ], 50, "High", "Night");
-                static S5BarrierSkip = new Preset("Barrier Skip", "s5bsv1", [
+                static S5BarrierSkip = new Preset("Barrier Skip", "s5barrierskip", [
                     "switchAztecTunnel",
                     "switchAztec5DT",
                     "switchAztecLlama",
@@ -558,9 +558,28 @@
                     "switchGalleonLighthouse",
                     "switchGalleonShipyard",
                     "switchForestYellow",
-                    "switchClimbing",
                     "switchAllWarps",
                 ], 50, "High", "Day");
+                static S5RainbowSlide = new Preset("Rainbow Slide", "s5rainbowslide", [
+                    "switchJapesCoconut",
+                    "switchAztecIce",
+                    "switchAztec5DT",
+                    "switchFactoryTesting",
+                    "switchGalleonLighthouse",
+                    "switchGalleonSeasick",
+                    "switchGalleonTreasure",
+                    "switchForestGreen",
+                    "switchCavesIgloo",
+                ], 27, "High", "Day");
+                static S5GetVial = new Preset("Get Vial Manipulation", "s5getvial", [
+                    "switchJapesCoconut",
+                    "switchAztecIce",
+                    "switchAztec5DT",
+                    "switchFactoryTesting",
+                    "switchGalleonLighthouse",
+                    "switchGalleonSeasick",
+                    "switchCavesIgloo",
+                ], 40, "High", "Day");
                 constructor (name, key, barriers, cb_requirement, galleon_water, fungi_time) {
                     this.name = name;
                     this.key = key;
@@ -578,6 +597,8 @@
                 //Preset.Season3CLO,
                 Preset.Season4,
                 Preset.S5BarrierSkip,
+                Preset.S5RainbowSlide,
+                Preset.S5GetVial,
                 Preset.Beginner,
                 Preset.BLZR,
                 Preset.Vanilla,

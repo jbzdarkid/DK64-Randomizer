@@ -107,6 +107,7 @@ class Logic:
         self.settings = _SHARED_SETTINGS
         self.Events = self.reqs & _EVENT_POOL
         self.SpecialLocationsReached = self.reqs & _LOCATION_POOL
+        self.spoiler = MockSpoiler()
 
     def get(self, key):
         """Check if a given key is in the requirements."""

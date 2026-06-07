@@ -1,0 +1,43 @@
+name: CBCalc nightly
+on:
+  schedule:
+    - cron: '4 20 * * *' # Daily at 20:04 AM UTC
+  workflow_dispatch:
+
+jobs:
+  run:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v5
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GH_TOKEN }}
+    - name: Update fork
+      run: |
+        git config --global user.email "dk64-randomizer@dk64randomizer.com"
+        git config --global user.name "CBCalc Nightly"
+        git remote add upstream https://github.com/2dos/DK64-Randomizer
+        git fetch upstream dev
+        git rebase upstream/dev || exit 1
+        git push --force
+
+    - name: Setup python
+      uses: actions/setup-python@v6.0.0
+      with:
+          python-version: 3.11.7
+          architecture: x64
+
+    - name: Run CB calculator
+      run: python -u cb_calc.py
+
+    - name: Check for changes
+      run: |
+        CHANGED_FILES=0
+        git diff --quiet --exit-code || CHANGED_FILES=$?
+        if [ $CHANGED_FILES -eq 0 ]; then exit 0; fi # If no unstaged files, exit the script
+        echo "Detected changed files, please run 'Update CB requirements' task"
+        git diff # Print changes so the user can see them
+        exit 1
